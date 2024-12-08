@@ -1,0 +1,155 @@
+---
+title: "Formative Assessment 10"
+author: "Ramilo, Zion John Yousef"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+cholesterolDataSet <- read_csv("Cholesterol_R2.csv")
+view(cholesterolDataSet)
+```
+**Assumption #1**: You have a continuous dependent variable.
+Remark: The dependent variable is the cholesterol level for each time points and are continuous. 
+
+**Assumption #2**: You have one between-subjects factor (i.e., independent variable) that is categorical with two or more categories.
+
+Remark: the between subjects factor is the two brands of margarine.
+
+**Assumption #3**: You have one within-subjects factor (i.e., independent variable) that is categorical with two or more categories (Brand A, Brand B).
+
+Remark: the within subjects factor are the three time points of the dataset.
+
+**Assumption #4**: There should be no significant outliers in any cell of the design.
+```{r}
+cholesterolDataSetLong <- cholesterolDataSet %>%
+  pivot_longer(cols = Before:After8weeks,
+               names_to = "Time",
+               values_to = "Level")
+
+ggplot(cholesterolDataSetLong, aes(x = Margarine, y = Level, fill = Time)) +
+  geom_boxplot(position = position_dodge(width = 0.8)) + # Separate boxes for each time point
+  theme_minimal() +
+  labs(
+    title = "Cholesterol Level by Margarine Brand and Time",
+    x = "Margarine Brand",
+    y = "Cholesterol Level"
+  )
+```
+```{r}
+library(dplyr)
+
+cholesterolDataSetLong <- cholesterolDataSetLong %>%
+  group_by(Margarine, Time) %>%
+  mutate(
+    Q1 = quantile(Level, 0.25, na.rm = TRUE),
+    Q3 = quantile(Level, 0.75, na.rm = TRUE),
+    IQR = Q3 - Q1,
+    lower_bound = Q1 - 1.5 * IQR,
+    upper_bound = Q3 + 1.5 * IQR,
+    Level = ifelse(Level < lower_bound, lower_bound, 
+                   ifelse(Level > upper_bound, upper_bound, Level))
+  ) %>%
+  ungroup()
+View(cholesterolDataSetLong)
+```
+
+```{r}
+ggplot(cholesterolDataSetLong, aes(x = Margarine, y = Level, fill = Time)) +
+  geom_boxplot(position = position_dodge(width = 0.8)) + # Separate boxes for each time point
+  theme_minimal() +
+  labs(
+    title = "Cholesterol Level by Margarine Brand and Time",
+    x = "Margarine Brand",
+    y = "Cholesterol Level"
+  )
+```
+```{r}
+cholesterolDataSetLong <- cholesterolDataSetLong %>%
+  select(-Q1, -Q3,-IQR,-lower_bound,-upper_bound)
+head(cholesterolDataSetLong)
+```
+Remark: Using Winsorization there are no extreme outliers.
+
+**Assumption #5**: The dependent variable should be approximately normally distributed for each cell of the design.
+
+```{r}
+ShapiroWilkTest <- cholesterolDataSetLong %>%
+  group_by(Margarine,Time) %>%
+  summarise(
+    shapiro_statistic = shapiro.test(Level)$statistic,
+    shapiro_pValue = shapiro.test(Level)$p.value
+  )
+ShapiroWilkTest
+```
+Remark: All covariances are sufficiently normally distributed.
+
+**Assumption #6**: The variance of your dependent variable should be equal between the groups of the between-subjects factor, referred to as the assumption of homogeneity of variances.
+
+```{r}
+library(car)
+leveneTest(Level ~ Margarine, data = cholesterolDataSetLong)
+```
+Remark:
+Based on the given p-value being less than 0.05 the test for homogeneity for between-subjects factor is violated, therefore we are unable to perform BM ANOVA.
+
+Since one of the assumptions of BM ANOVA is violated we are to perform hypothesis testing using a non-parametric test. We shall use Kruskal Wallis Test for comparing our between-subjects variables, then use Friedman Test for repeated measurements/ within-subjects variable.
+
+(H0): There is no significant difference in the cholesterol levels between the two brands of margarine over the three time points.
+
+(H1): There is a significant difference in the cholesterol levels between the two brands of margarine over the three time points.
+
+```{r}
+cholesterolDataSetLong$Margarine <- as.factor(cholesterolDataSetLong$Margarine)
+cholesterolDataSetLong$Time <- as.factor(cholesterolDataSetLong$Time)
+
+library(ARTool)
+art_model <- art(Level ~ Margarine * Time + (1 | ID), data = cholesterolDataSetLong)
+
+anova(art_model)
+```
+Descriptive Statistics
+```{r}
+margarineSummary <- cholesterolDataSetLong %>%
+  group_by(Margarine) %>%
+  summarise(
+    Mean = mean(Level, na.rm = TRUE),
+    SD = sd(Level, na.rm = TRUE),
+    Median = median(Level, na.rm = TRUE),
+    Min = min(Level, na.rm = TRUE),
+    Max = max(Level, na.rm = TRUE),
+    n = n()
+  )
+print(margarineSummary)
+```
+```{r}
+TimeSummary <- cholesterolDataSetLong %>%
+  group_by(Time) %>%
+  summarise(
+    Mean = mean(Level, na.rm = TRUE),
+    SD = sd(Level, na.rm = TRUE),
+    Median = median(Level, na.rm = TRUE),
+    Min = min(Level, na.rm = TRUE),
+    Max = max(Level, na.rm = TRUE),
+    n = n()
+  )
+print(TimeSummary)
+```
+
+The Dataset consisting of 54 participants, wherein each participant's cholestorol levels are measured on three different time points namely: Before, After 4 weeks, After 8 weeks and it's relation to the consumption of two different margarine brands which are labeled as A and B respectively.
+
+Margarine A had a mean cholesterol level of 5.6075 (SD = 1.356877) whilst margarine B has a mean cholestorol level of 6.253958 (SD = 0.6965044)
+
+For within time levels, before, the participant's had a mean cholesterol level of 
+6.326111 (SD = 1.061707). After 4 weeks of margarine intake has a mean cholesterol level of 5.824444 (SD = 1.095043). lastly, after 8 weeks of margarine intake, the mean cholesterol level of participants is 5.749375 (SD = 1.054370)
+
+Due to the violations of standard parametric test  (i.e. BM ANOVA) particularly the assumption of homogeneity of variances for between-subjects. Aligned Rank Transformation (ART) is a non-parametric test that is robust to violations of normality and homogeneity of variance. It transforms the data in such a way that the factorial structure is preserved. This approach is especially appropriate for analyzing factorial designs with repeated measures, as it handles both the within-subjects and between-subjects factors simultaneously.
+
+ART was used to examine the effects of Margarine type, time, and thier interaction with each other where the results have shown that between the Margarine types, F(1,16)= 1.260, p = 0.27805, to which there are no significant difference on the cholesterol levels upon intake of either Margarine A or B.
+
+A significant effect upon time was determined to be, F(2,32) = 52.1991 p=8.4229e-11, to which implies that there is a significant difference on intake of margarine through different time points.
+
+The interaction between time and margarine was found to be non significant with an effect, F(2,32) = 1.485, p = 0.24154, suggesting that we are unable to reject our null hypothesis and thus there is no significant difference in the cholesterol levels between the two brands of margarine over the three time points.
+
+
